@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Painel de Dados Recebidos</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f3f3f3;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      max-width: 800px;
+      margin: auto;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    .time {
+      font-size: 13px;
+      color: #555;
+    }
+
+    pre {
+      background: #eee;
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(7px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <h1>📡 Registros Recebidos</h1>
+  <div id="container">Carregando...</div>
+
+  <script>
+    async function load() {
+      const res = await fetch("/api/registros");
+      const data = await res.json();
+
+      const container = document.getElementById("container");
+      container.innerHTML = "";
+
+      data.slice().reverse().forEach(item => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        card.innerHTML = `
+          <div class="time"><b>Recebido em:</b> ${item.recebido_em}</div>
+          <pre>${JSON.stringify(item.dados, null, 2)}</pre>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    // Atualiza a cada 2 segundos
+    load();
+    setInterval(load, 2000);
+  </script>
+</body>
+</html>
