@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <title>Activity Data Log</title>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen p-4 sm:p-8">
+  <!-- Login Screen -->
+  <div id="loginScreen" class="max-w-md mx-auto mt-20">
+    <div class="bg-white p-8 rounded-xl shadow-lg">
+      <h2 class="text-2xl font-bold mb-6 text-center">Dashboard Login</h2>
+      <input type="password" id="loginPassword" placeholder="Enter password" 
+        class="w-full p-3 border rounded-lg mb-4 focus:ring-blue-500 focus:border-blue-500">
+      <button id="loginBtn" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700">Login</button>
+      <p id="loginError" class="text-red-500 text-sm mt-2 hidden">Invalid password</p>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard" class="max-w-7xl mx-auto hidden">
+    <header class="mb-8 flex justify-between items-center">
+      <div>
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2  mt-3 flex font-semibold">
+          <i class="mr-4 mt-1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="27" height="27" viewBox="0 0 24 24" fill="none"
+              stroke="#7e42f5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+            </svg>
+          </i>Metadata sessions
+        </h1>
+        <p class="text-lg text-gray-500">
+          Status: <span id="statusMessage" class="font-semibold text-green-600"></span>
+        </p>
+      </div>
+      <div class="flex gap-3">
+        <button id="toggleSearch" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Toggle Search</button>
+        <button id="toggleCards" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Toggle Cards</button>
+        <button id="toggleAdmin" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Admin View</button>
+        <button id="logoutBtn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Logout</button>
+      </div>
+    </header>
+
+    <!-- Admin View -->
+    <div id="adminView" class="hidden mb-8 bg-white rounded-xl shadow-lg p-6">
+      <h3 class="text-xl font-bold mb-4 text-purple-700">Admin Controls</h3>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold mb-2">Total Sessions</h4>
+          <p id="totalSessions" class="text-2xl font-bold text-blue-600">0</p>
+        </div>
+        <div class="bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold mb-2">Active IPs</h4>
+          <p id="activeIPs" class="text-2xl font-bold text-green-600">0</p>
+        </div>
+        <div class="bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold mb-2">Last Updated</h4>
+          <p id="lastUpdated" class="text-sm text-gray-600">--</p>
+        </div>
+        <div class="bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold mb-2">Auto Refresh</h4>
+          <button id="autoRefresh" class="px-3 py-1 bg-red-500 text-white rounded hover:red-600">OFF</button>
+        </div>
+      </div>
+      <div class="flex gap-3 flex-wrap">
+        <button id="refreshData" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Refresh Data</button>
+        <button id="exportData" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600">Export JSON</button>
+        <button id="filterByIP" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">Filter by IP</button>
+        <button id="clearAll" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">Clear All</button>
+      </div>
+    </div>
+
+    <div id="searchSection" class="mb-6">
+      <input type="text" id="searchInput" placeholder="Search by ID, IP address, or User Agent..."
+        class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+    </div>
+
+    <div id="cardsContainer" class="mt-14 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6"></div>
+
+    <p id="noResults" class="hidden text-center text-xl text-gray-500 mt-12">
+      No results found matching your search query.
+    </p>
+  </div>
+
+  <script>
+    let docs = [];
+    const PASSWORD = 'admin123';
+
+    // Login functionality
+    document.getElementById('loginBtn').addEventListener('click', () => {
+      const password = document.getElementById('loginPassword').value;
+      if (password === PASSWORD) {
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        loadData();
+      } else {
+        document.getElementById('loginError').classList.remove('hidden');
+      }
+    });
+
+    document.getElementById('loginPassword').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') document.getElementById('loginBtn').click();
+    });
+
+    // Toggle functionality
+    document.getElementById('toggleSearch').addEventListener('click', () => {
+      const searchSection = document.getElementById('searchSection');
+      searchSection.classList.toggle('hidden');
+    });
+
+    document.getElementById('toggleCards').addEventListener('click', () => {
+      const cardsContainer = document.getElementById('cardsContainer');
+      cardsContainer.classList.toggle('hidden');
+    });
+
+    document.getElementById('toggleAdmin').addEventListener('click', () => {
+      const adminView = document.getElementById('adminView');
+      adminView.classList.toggle('hidden');
+      if (!adminView.classList.contains('hidden')) {
+        updateAdminStats();
+      }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      document.getElementById('dashboard').classList.add('hidden');
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('loginPassword').value = '';
+      document.getElementById('loginError').classList.add('hidden');
+    });
+
+    function updateAdminStats() {
+      document.getElementById('totalSessions').textContent = docs.length;
+      const uniqueIPs = new Set(docs.map(doc => doc.data.meta?.[0]?.navigation?.infos?.[0]?.ip).filter(Boolean));
+      document.getElementById('activeIPs').textContent = uniqueIPs.size;
+      document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+    }
+
+    let autoRefreshInterval;
+    document.getElementById('autoRefresh').addEventListener('click', (e) => {
+      if (e.target.textContent === 'OFF') {
+        autoRefreshInterval = setInterval(loadData, 30000);
+        e.target.textContent = 'ON';
+        e.target.classList.replace('bg-red-500', 'bg-green-500');
+      } else {
+        clearInterval(autoRefreshInterval);
+        e.target.textContent = 'OFF';
+        e.target.classList.replace('bg-green-500', 'bg-red-500');
+      }
+    });
+
+    document.getElementById('refreshData').addEventListener('click', loadData);
+
+    document.getElementById('exportData').addEventListener('click', () => {
+      const data = JSON.stringify(docs, null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sessions_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+    });
+
+    document.getElementById('filterByIP').addEventListener('click', () => {
+      const ip = prompt('Enter IP address to filter:');
+      if (ip) {
+        const filtered = docs.filter(doc => doc.data.meta?.[0]?.navigation?.infos?.[0]?.ip === ip);
+        renderCards(filtered);
+      }
+    });
+
+    document.getElementById('clearAll').addEventListener('click', () => {
+      if (confirm('Clear all sessions? This cannot be undone.')) {
+        docs = [];
+        renderCards();
+        updateAdminStats();
+      }
+    });
+
+
+    firebase.initializeApp({
+      apiKey: "AIzaSyArb4dHgtmNvhiyc7ssRdYeo0Es9PSgR3g",
+      authDomain: "api-sonet.firebaseapp.com",
+      projectId: "api-sonet",
+      storageBucket: "api-sonet.firebasestorage.app",
+      messagingSenderId: "659857500960",
+      appId: "1:659857500960:web:1fa07fc440d055d3f68545"
+    });
+
+    const db = firebase.firestore();
+
+    function stableStringify(obj) {
+      return JSON.stringify(obj, function (key, value) {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          return Object.keys(value)
+            .sort()                // 🔒 Sort keys alphabetically
+            .reduce((o, k) => {
+              o[k] = value[k];
+              return o;
+            }, {});
+        }
+        return value;
+      }, 2);
+    }
+
+
+    function removeEmpty(obj) {
+      if (Array.isArray(obj)) return obj.map(removeEmpty).filter(v => v != null);
+      if (typeof obj === 'object' && obj !== null) {
+        const cleaned = {};
+        for (const [k, v] of Object.entries(obj)) {
+          const val = removeEmpty(v);
+          if (val != null && val !== '' && !(Array.isArray(val) && val.length === 0) &&
+            !(typeof val === 'object' && Object.keys(val).length === 0)) {
+            cleaned[k] = val;
+          }
+        }
+        return Object.keys(cleaned).length ? cleaned : null;
+      }
+      return obj;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function createCard(doc) {
+      const meta = doc.data.meta?.[0] || {};
+      const ip = meta.navigation?.infos?.[0]?.ip;
+      const uriMaps = meta.navigation?.infos?.[0]?.uriMaps;
+
+
+      const card = document.createElement('div');
+      card.className = 'bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden';
+
+      const header = document.createElement('div');
+      header.className = 'p-3 flex justify-between items-center bg-blue-600';
+
+      const title = document.createElement('h2');
+      title.className = 'font-medium font-wide text-white lowercase';
+      title.textContent = `id: ${doc.id}`;
+
+      const buttonGroup = document.createElement('div');
+      buttonGroup.className = 'flex gap-2';
+
+      const mapsLink = document.createElement('a');
+      mapsLink.href = uriMaps || '#';
+      mapsLink.target = '_blank';
+      mapsLink.className = 'px-3 py-1 text-xs font-medium font-wide rounded-lg bg-blue-400 hover:bg-blue-300 transition duration-150 text-white flex items-center gap-1';
+      mapsLink.innerHTML = `Maps<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>`;
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'copy-btn px-3 py-1 text-xs font-medium font-wide rounded-lg bg-blue-400 hover:bg-blue-500 transition duration-150 text-white';
+      copyBtn.textContent = 'Copy';
+      copyBtn.setAttribute('data-id', doc.id);
+
+      buttonGroup.appendChild(mapsLink);
+      buttonGroup.appendChild(copyBtn);
+      header.appendChild(title);
+      header.appendChild(buttonGroup);
+
+      const body = document.createElement('div');
+      body.className = 'px-4 pb-4 mt-5 space-y-3';
+
+      if (ip) {
+        const ipInfo = document.createElement('div');
+        ipInfo.className = 'text-xs text-gray-700 space-y-2';
+        const ipPara = document.createElement('p');
+        const ipLabel = document.createElement('span');
+        ipLabel.className = 'font-semibold';
+        ipLabel.textContent = 'IP:';
+        ipPara.appendChild(ipLabel);
+        ipPara.appendChild(document.createTextNode(` ${ip}`));
+        ipInfo.appendChild(ipPara);
+        body.appendChild(ipInfo);
+      }
+
+      const pre = document.createElement('pre');
+      pre.className = 'bg-gray-50 p-3 rounded-lg overflow-auto max-h-80 text-xs text-gray-800 font-mono leading-relaxed';
+      pre.textContent = stableStringify(doc.data);
+      body.appendChild(pre);
+
+      card.appendChild(header);
+      card.appendChild(body);
+
+      return card;
+    }
+
+    // const signOutButton = document.getElementById('sign-out-button');
+    // signOutButton.addEventListener('click', async () => {
+    //   try {
+    //     await signOut(auth);
+    //   } catch (error) {
+    //     console.error("Sign Out Error:", error);
+    // }
+    // });    // In a real app, you might show a toast notification here
+    //   
+
+    function renderCards(filtered = docs) {
+      const container = document.getElementById('cardsContainer');
+      const noResults = document.getElementById('noResults');
+
+      container.innerHTML = '';
+
+      if (filtered.length === 0) {
+        noResults.classList.remove('hidden');
+      } else {
+        filtered.forEach(doc => {
+          container.appendChild(createCard(doc));
+        });
+        noResults.classList.add('hidden');
+      }
+    }
+
+    document.getElementById('cardsContainer').addEventListener('click', (e) => {
+      const btn = e.target.closest('.copy-btn');
+      if (btn) {
+        const id = btn.getAttribute('data-id');
+        navigator.clipboard.writeText(id).then(() => {
+          const orig = btn.textContent;
+          btn.textContent = 'Copied!';
+          btn.classList.remove('bg-blue-400');
+          btn.classList.add('bg-green-500');
+          setTimeout(() => {
+            btn.textContent = orig;
+            btn.classList.remove('bg-green-500');
+            btn.classList.add('bg-blue-400');
+          }, 1500);
+        }).catch(err => {
+          console.error('Failed to copy:', err);
+        });
+      }
+    });
+
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+
+      if (!query) {
+        renderCards();
+        return;
+      }
+
+      const filtered = docs.filter(doc =>
+        doc.id.toLowerCase().includes(query) ||
+        JSON.stringify(doc.data).toLowerCase().includes(query)
+      );
+
+      renderCards(filtered);
+    });
+
+    async function loadData() {
+      try {
+        document.getElementById('statusMessage').textContent = 'Loading...';
+        const snapshot = await db.collection('sessions').get();
+
+        // Sort documents by their ID (or replace doc.id with another field like creation timestamp)
+        docs = snapshot.docs.map(doc => ({ id: doc.id, data: removeEmpty(doc.data()) }))
+          .sort((a, b) => a.data.createdAt - b.data.createdAt);  // Sort by createdAt (ascending)
+        // Sorting by ID alphabetically
+
+        document.getElementById('statusMessage').textContent = `Received ${docs.length} sessions.`;
+        renderCards();  // Render the sorted data
+      } catch (e) {
+        document.getElementById('statusMessage').textContent = 'Error loading data';
+        document.getElementById('statusMessage').classList.remove('text-green-600');
+        document.getElementById('statusMessage').classList.add('text-red-600');
+        console.error('Error loading data:', e);
+      }
+    }
+
+
+    window.onload = loadData;
+  </script>
+</body>
+
+</html>
